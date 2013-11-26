@@ -20,17 +20,34 @@ SLOT 1 $4000
 .BANK 0 SLOT 0
 
 .ENUM $C000
+DistanceTraveled DW
+Points DB
+Status DB   ; bit 0: going to:
+                ; 0: Las Vegas
+                ; 1: Tucson
+            ; bit 3-1:
+                ; 0: riding
+                ; 1: title
+                ; 2: name entry
+                ; 3: arrived
+                ; 4: being towed back
+                ; 5: game over
+            ; bit 4:
+                ; 0: day
+                ; 1: night
+
 Vel DB
 XVel DB
 AbsXVel DB
 XPos DB
 AbsXPos DB
-DistanceTraveled DW
-Points DB
+PhysXPos DB
 
 RoadAngleMod DB
 PerspCounter DB
-PhysXPos DB
+RoadLinePos DB
+RoadLineMod DB
+RoadLineCounter DB
 .ENDE
 
 .ORG $40 ; vblank interrupt
@@ -42,6 +59,12 @@ reti
 .org $48 ; LCD STAT interrupt
 .section "lstat" force
 call lcdstat
+reti
+.ends
+
+.org $50 ; timer interrupt
+.section "timerint" force
+;call timer
 reti
 .ends
 
@@ -76,14 +99,16 @@ start:
     ldh ($40),a
 
     ;load tiles
-    ld b, 8*2*$12
+    ld bc, 8*2* $12
     ld de,tiles
     ld hl,$8000
     ldspr:
     ld a,(de)
     ldi (hl),a
     inc de
-    dec b
+    dec bc
+    ld a, b
+    or c
     jr nz,ldspr
 
     ld de,32*32
@@ -146,11 +171,18 @@ start:
     dec b
     jr nz,clspr
 
-    ld a,%00000011 ; interrupt enable. bit 0: vblank, bit 1: LCD STAT, bit 2: timer, bit 3: serial, bit 4: joypad
+    ld a,%00000111 ; interrupt enable. bit 0: vblank, bit 1: LCD STAT, bit 2: timer, bit 3: serial, bit 4: joypad
     ldh ($FF),a
 
     ld a,%00001000 ; LCD STAT interrupt settings: interrupt on h-blank
     ldh ($41),a
+
+    ld a,0 ; timer modulo
+    ldh ($03),a
+
+    ld a,%100 ; enable timer, set to 4096Hz (→ interrupts every 60ms)
+    ldh ($07),a
+
 
     ld a,%11100100 ; palette
     ldh ($47),a
@@ -172,6 +204,9 @@ start:
     ld (DistanceTraveled+1),a
     ld (Points),a
 
+    ld a,$b
+    ld (RoadLineMod),a
+
     ei ; enable interrupts again
 
     jp main
@@ -184,7 +219,154 @@ main:
     halt
     jp main
 
+updroadline:
+    ld a, (RoadLineCounter)
+    dec a
+    ld c, a
+    jr nz, ++
+    ld a, (RoadLineMod)
+    cp 0
+    jp z, +++
+    ld c, a
+    ld a, (RoadLinePos)
+    dec a
+    cp 255
+    jr nz, +
+    ld a, 9
+    +:
+    ld (RoadLinePos), a
+    ld a, c
+    ++:
+    ld (RoadLineCounter), a
+
+    ld a, (RoadLinePos)
+    ld b, a
+
+    cp 0
+    jr nz, +
+    ld a,$10
+    ld ($9800 + 32*17 + 14), a
+    ld a,$2
+    ld ($9800 + 32*17 + 15), a
+    ld ($9800 + 32*17 + 16), a
+    ld a,$11
+    ld ($9800 + 32*17 + 17), a
+    ld a,$5
+    ld ($9800 + 32*12 + 15), a
+    ld ($9800 + 32*12 + 16), a
+    ld a, b
+
+    +:
+    cp 1
+    jr nz, +
+    ld a,$10
+    ld ($9800 + 32*16 + 14), a
+    ld a,$2
+    ld ($9800 + 32*16 + 15), a
+    ld ($9800 + 32*16 + 16), a
+    ld a,$11
+    ld ($9800 + 32*16 + 17), a
+    ld a,$5
+    ld ($9800 + 32*11 + 15), a
+    ld ($9800 + 32*11 + 16), a
+    ld a, b
+
+    +:
+    cp 2
+    jr nz, +
+    ld a,$2
+    ld ($9800 + 32*15 + 15), a
+    ld ($9800 + 32*15 + 16), a
+    ld a,$5
+    ld ($9800 + 32*10 + 15), a
+    ld ($9800 + 32*10 + 16), a
+    ld a, b
+
+    +:
+    cp 3
+    jr nz, +
+    ld a,$2
+    ld ($9800 + 32*14 + 15), a
+    ld ($9800 + 32*14 + 16), a
+    ld a,$5
+    ld ($9800 + 32*9  + 15), a
+    ld ($9800 + 32*9  + 16), a
+    ld a, b
+
+    +:
+    cp 4
+    jr nz, +
+    ld a,$e
+    ld ($9800 + 32*13 + 15), a
+    ld a,$f
+    ld ($9800 + 32*13 + 16), a
+    ld a, b
+
+    +:
+    cp 5
+    jr nz, +
+    ld a,$e
+    ld ($9800 + 32*12 + 15), a
+    ld a,$f
+    ld ($9800 + 32*12 + 16), a
+    ld a,$5
+    ld ($9800 + 32*17 + 14), a
+    ld ($9800 + 32*17 + 15), a
+    ld ($9800 + 32*17 + 16), a
+    ld ($9800 + 32*17 + 17), a
+    ld a, b
+
+    +:
+    cp 6
+    jr nz, +
+    ld a,$c
+    ld ($9800 + 32*11 + 15), a
+    ld a,$d
+    ld ($9800 + 32*11 + 16), a
+    ld a,$5
+    ld ($9800 + 32*16 + 14), a
+    ld ($9800 + 32*16 + 15), a
+    ld ($9800 + 32*16 + 16), a
+    ld ($9800 + 32*16 + 17), a
+    ld a, b
+
+    +:
+    cp 7
+    jr nz, +
+    ld a,$c
+    ld ($9800 + 32*10 + 15), a
+    ld a,$d
+    ld ($9800 + 32*10 + 16), a
+    ld a,$5
+    ld ($9800 + 32*15 + 15), a
+    ld ($9800 + 32*15 + 16), a
+    ld a, b
+
+    +:
+    cp 8
+    jr nz, +
+    ld a,$c
+    ld ($9800 + 32*09 + 15), a
+    ld a,$d
+    ld ($9800 + 32*09 + 16), a
+    ld a,$5
+    ld ($9800 + 32*14 + 15), a
+    ld ($9800 + 32*14 + 16), a
+    ld a, b
+
+    +:
+    cp 9
+    jr nz, +
+    ld a, $5
+    ld ($9800 + 32*13 + 15), a
+    ld ($9800 + 32*13 + 16), a
+
+    +:
+    +++:
+    ret
+
 vblank:
+    call updroadline
     ld a,%00100000 ; select directional buttons
     ldh ($0),a
     ldh a,($0) ; read button state
@@ -209,7 +391,7 @@ vblank:
 
     cp c
     jr nz,+ ; no direction (or both directions) are pressed
-        ld a, $80
+        ld a, $82
     +:
 
     ld (XVel), a
@@ -339,6 +521,7 @@ lcdstat:
 
     +:
     ret
+
 
 .ends
 
